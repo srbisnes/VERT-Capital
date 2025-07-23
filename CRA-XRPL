@@ -1,0 +1,82 @@
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract CreditStructuredAsset {
+    string public name = "Agribusiness Receivable Certificate";
+    string public symbol = "CRA700M";
+    uint8 public decimals = 18;
+    uint256 public totalSupply;
+    uint256 public couponAmount;
+    uint256 public maturityDate;
+
+    address public issuer;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    mapping(address => bool) public hasClaimedCoupon;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+    event CouponPaid(address indexed to, uint256 amount);
+    event Redeemed(address indexed investor, uint256 amount);
+
+    constructor(uint256 _initialSupply, uint256 _couponAmount, uint256 _maturityDate) {
+        issuer = msg.sender;
+        totalSupply = _initialSupply * (10 ** uint256(decimals));
+        balanceOf[issuer] = totalSupply;
+        couponAmount = _couponAmount * (10 ** uint256(decimals));
+        maturityDate = _maturityDate; // timestamp e.g. block.timestamp + X days
+        emit Transfer(address(0), issuer, totalSupply);
+    }
+
+    modifier onlyIssuer() {
+        require(msg.sender == issuer, "Only issuer");
+        _;
+    }
+
+    function transfer(address _to, uint256 _value) public returns (bool) {
+        require(balanceOf[msg.sender] >= _value, "Not enough tokens");
+        balanceOf[msg.sender] -= _value;
+        balanceOf[_to] += _value;
+        emit Transfer(msg.sender, _to, _value);
+        return true;
+    }
+
+    function approve(address _spender, uint256 _value) public returns (bool) {
+        allowance[msg.sender][_spender] = _value;
+        emit Approval(msg.sender, _spender, _value);
+        return true;
+    }
+
+    function transferFrom(address _from, address _to, uint256 _value) public returns (bool) {
+        require(balanceOf[_from] >= _value, "Not enough tokens");
+        require(allowance[_from][msg.sender] >= _value, "Allowance exceeded");
+        balanceOf[_from] -= _value;
+        balanceOf[_to] += _value;
+        allowance[_from][msg.sender] -= _value;
+        emit Transfer(_from, _to, _value);
+        return true;
+    }
+
+    function claimCoupon() public {
+        require(balanceOf[msg.sender] > 0, "No tokens");
+        require(!hasClaimedCoupon[msg.sender], "Already claimed");
+        require(block.timestamp < maturityDate, "Coupon period over");
+        hasClaimedCoupon[msg.sender] = true;
+        emit CouponPaid(msg.sender, couponAmount);
+        // Aquí se integraría lógica de pago off-chain o bridged token.
+    }
+
+    function redeemAtMaturity() public {
+        require(block.timestamp >= maturityDate, "Not matured");
+        require(balanceOf[msg.sender] > 0, "No tokens");
+        uint256 redeemAmount = balanceOf[msg.sender];
+        balanceOf[msg.sender] = 0;
+        emit Redeemed(msg.sender, redeemAmount);
+        // Redimir: lógica off-chain o puente de pago del principal.
+    }
+
+    function updateMaturityDate(uint256 _newDate) external onlyIssuer {
+        maturityDate = _newDate;
+    }
+}
